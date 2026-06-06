@@ -1,5 +1,9 @@
 # Sound Director — Звукорежиссёр
 
+**▶ Live app: https://yuriliskov.github.io/sound-director/**
+Open that on the Samsung in Chrome → menu → **Add to Home screen / Install app**.
+Works offline after first load; keeps the screen awake during a show.
+
 A script-driven **sound cue board** for live theater, built to run on an Android
 Samsung phone or tablet as an installable web app (PWA). Tag a play's script with
 **start / stop / fade** cues, build a library of mp3/wav backing tracks
