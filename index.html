@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./app.css" />
+  <title>Sound Director — Звукорежиссёр</title>
+</head>
+<body>
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▶</span>
+      <span class="brand-name">Sound Director</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-view="perform">🎛 Show</button>
+      <button class="tab" data-view="cues">🎬 Cues</button>
+      <button class="tab" data-view="library">🎵 Audio</button>
+      <button class="tab" data-view="script">📜 Script</button>
+    </nav>
+    <div class="topbar-right">
+      <span class="show-name" id="showName" title="Show name">No show</span>
+      <button class="icon-btn" id="menuBtn" title="Menu">⋯</button>
+    </div>
+  </header>
+
+  <!-- ============ MENU SHEET ============ -->
+  <div class="sheet-backdrop" id="menuBackdrop" hidden>
+    <div class="sheet" role="menu">
+      <h3>Show</h3>
+      <button class="menu-item" data-act="new-show">🆕 New show…</button>
+      <button class="menu-item" data-act="rename-show">✏️ Rename show…</button>
+      <button class="menu-item" data-act="export-show">⬇️ Export show file (.json)</button>
+      <button class="menu-item" data-act="import-show">⬆️ Import show file…</button>
+      <button class="menu-item" data-act="export-bundle">📦 Export full backup (with audio .zip)</button>
+      <button class="menu-item" data-act="import-bundle">📂 Import full backup (.zip)…</button>
+      <hr/>
+      <h3>App</h3>
+      <button class="menu-item" data-act="install">📲 Install app on this device</button>
+      <button class="menu-item" data-act="storage">💾 Storage usage…</button>
+      <button class="menu-item" data-act="help">❓ Help / how to use</button>
+      <div class="menu-version" id="menuVersion"></div>
+      <button class="menu-close" data-act="close">Close</button>
+    </div>
+  </div>
+
+  <main id="main">
+    <!-- ============ PERFORM VIEW ============ -->
+    <section class="view" data-view="perform" hidden>
+      <div class="perform-grid">
+        <div class="perform-script" id="performScript">
+          <div class="empty-state">No cues yet. Go to <b>Script</b> → import text, then <b>Cues</b> → tag start/stop points.</div>
+        </div>
+        <aside class="perform-side">
+          <div class="next-cue-card" id="nextCueCard">
+            <div class="nc-label">NEXT CUE</div>
+            <div class="nc-title" id="nextCueTitle">—</div>
+            <div class="nc-sub" id="nextCueSub"></div>
+          </div>
+          <button class="go-btn" id="goBtn" disabled>GO</button>
+          <div class="go-row">
+            <button class="mini-btn" id="prevCueBtn" title="Previous cue">◀ Prev</button>
+            <button class="mini-btn" id="nextCueBtn" title="Skip / advance without firing">Skip ▶</button>
+          </div>
+          <div class="voice-row">
+            <label class="switch">
+              <input type="checkbox" id="voiceToggle" />
+              <span class="slider"></span>
+            </label>
+            <span class="voice-label">🎙 Voice assist <span class="hint" id="voiceState">off</span></span>
+          </div>
+          <div class="voice-heard" id="voiceHeard"></div>
+
+          <div class="now-playing">
+            <div class="np-head">
+              <span>NOW PLAYING</span>
+              <button class="panic-btn" id="panicBtn" title="Fade out everything">◼ STOP ALL</button>
+            </div>
+            <div class="np-list" id="npList"><div class="np-empty">silence</div></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ CUES VIEW ============ -->
+    <section class="view" data-view="cues" hidden>
+      <div class="toolbar">
+        <span class="toolbar-title">Cue list</span>
+        <span class="spacer"></span>
+        <button class="btn" id="autoDetectBtn" title="Scan the script for likely sound cues">✨ Auto-detect cues</button>
+        <button class="btn primary" id="addCueBtn">+ Add cue</button>
+      </div>
+      <div class="cue-list" id="cueList">
+        <div class="empty-state">No cues yet. Tag a line in the <b>Script</b> tab, or press <b>+ Add cue</b>.</div>
+      </div>
+    </section>
+
+    <!-- ============ LIBRARY VIEW ============ -->
+    <section class="view" data-view="library" hidden>
+      <div class="toolbar">
+        <span class="toolbar-title">Audio library</span>
+        <span class="spacer"></span>
+        <button class="btn primary" id="addAudioBtn">+ Add mp3 / wav…</button>
+        <input type="file" id="audioFileInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac,.flac" multiple hidden />
+      </div>
+      <div class="lib-list" id="libList">
+        <div class="empty-state">No audio yet. Add your backing tracks (минусовки) and sound effects.</div>
+      </div>
+    </section>
+
+    <!-- ============ SCRIPT VIEW ============ -->
+    <section class="view" data-view="script" hidden>
+      <div class="toolbar">
+        <span class="toolbar-title">Script</span>
+        <span class="spacer"></span>
+        <button class="btn" id="importDocxBtn">📄 Import .docx / .txt…</button>
+        <input type="file" id="scriptFileInput" accept=".docx,.txt,text/plain" hidden />
+        <button class="btn" id="pasteScriptBtn">📋 Paste text…</button>
+      </div>
+      <div class="script-list" id="scriptList">
+        <div class="empty-state">No script loaded. Import the play's .docx, or paste the text. Then tap any line to make it a cue.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ CUE EDITOR DIALOG ============ -->
+  <dialog id="cueDialog" class="dialog">
+    <form method="dialog" id="cueForm">
+      <h2 id="cueDialogTitle">Edit cue</h2>
+      <label class="fld">
+        <span>Name</span>
+        <input type="text" id="cueName" placeholder="e.g. Song — Ночной дозор" required />
+      </label>
+      <label class="fld">
+        <span>Action</span>
+        <select id="cueAction">
+          <option value="start">▶ START audio</option>
+          <option value="stop">◼ STOP audio (this cue's track)</option>
+          <option value="fade">↘ FADE OUT audio</option>
+          <option value="stopall">◼◼ STOP / fade EVERYTHING</option>
+        </select>
+      </label>
+      <label class="fld" id="audioFld">
+        <span>Audio file</span>
+        <select id="cueAudio"></select>
+      </label>
+      <div class="fld-row">
+        <label class="fld">
+          <span>Volume <output id="volOut">100%</output></span>
+          <input type="range" id="cueVolume" min="0" max="100" value="100" />
+        </label>
+        <label class="fld">
+          <span>Fade <output id="fadeOut">0.0s</output></span>
+          <input type="range" id="cueFade" min="0" max="100" value="0" />
+        </label>
+      </div>
+      <div class="fld-row">
+        <label class="chk"><input type="checkbox" id="cueLoop" /> Loop</label>
+        <label class="chk"><input type="checkbox" id="cueRestart" /> Restart if already playing</label>
+      </div>
+      <label class="fld">
+        <span>Anchored to script line</span>
+        <div class="anchor-box" id="cueAnchorBox">— not anchored —</div>
+      </label>
+      <label class="fld">
+        <span>Voice trigger phrase (what the app listens for)</span>
+        <input type="text" id="cueTrigger" placeholder="A few words spoken right before this cue" />
+        <small class="muted">Used only by Voice Assist to highlight this cue. GO still requires your tap.</small>
+      </label>
+      <menu class="dialog-actions">
+        <button type="button" class="btn danger" id="cueDeleteBtn">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="cueCancelBtn">Cancel</button>
+        <button type="submit" class="btn primary">Save cue</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- ============ TEXT INPUT DIALOG (paste / rename) ============ -->
+  <dialog id="textDialog" class="dialog">
+    <form method="dialog" id="textForm">
+      <h2 id="textDialogTitle">Paste text</h2>
+      <textarea id="textDialogArea" rows="12" placeholder="Paste here…"></textarea>
+      <input type="text" id="textDialogInput" hidden />
+      <menu class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="textCancelBtn">Cancel</button>
+        <button type="submit" class="btn primary">OK</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- toast -->
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="./vendor/jszip.min.js"></script>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

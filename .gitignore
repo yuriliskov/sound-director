@@ -1,0 +1,24 @@
+# Do NOT publish the play script or any audio — keep copyrighted content off the public repo
+script_extracted.txt
+*.docx
+*.doc
+*.rtf
+*.odt
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.aac
+*.flac
+
+# local server / logs / os cruft
+server.log
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# editor / tooling
+.claude/
+.vscode/
+node_modules/
