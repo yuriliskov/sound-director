@@ -1,5 +1,5 @@
 // Offline app shell. Bump CACHE when you change any file below.
-const CACHE = 'sound-director-v4';
+const CACHE = 'sound-director-v5';
 const ASSETS = [
   './',
   './index.html',

@@ -105,16 +105,17 @@ export function pickFile(accept, multiple = false) {
     const finish = (val) => {
       if (settled) return;
       settled = true;
-      window.removeEventListener('focus', onFocus);
-      setTimeout(() => input.remove(), 0);
+      setTimeout(() => { try { input.remove(); } catch {} }, 0);
       resolve(val);
     };
-    const onFocus = () => {
-      // Window regained focus: if no file was chosen shortly after, treat as cancel.
-      setTimeout(() => { if (!input.files || !input.files.length) finish(null); }, 1200);
-    };
+    // Resolve ONLY when a file is actually chosen — never on a focus/timeout guess,
+    // which on slow phones could fire before `change` and silently drop the file.
     input.addEventListener('change', () => finish(multiple ? Array.from(input.files) : (input.files[0] || null)), { once: true });
-    window.addEventListener('focus', onFocus, { once: true });
+    // If the user cancels, just tidy up the orphaned node later; leave the promise
+    // pending (harmless — the next pick starts fresh).
+    window.addEventListener('focus', () => {
+      setTimeout(() => { if (!settled && (!input.files || !input.files.length)) { try { input.remove(); } catch {} } }, 2000);
+    }, { once: true });
     document.body.append(input);
     input.click();
   });

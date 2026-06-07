@@ -8,19 +8,30 @@ const listEl = $('#libList');
 const PREVIEW_KEY = '__preview__';
 
 export async function addAudioFiles(files) {
+  files = Array.from(files || []).filter(Boolean);
+  if (!files.length) return;
+  toast(`Adding ${files.length} file${files.length > 1 ? 's' : ''}…`);
   let added = 0;
   for (const file of files) {
-    if (!/audio|mp3|wav|m4a|ogg|aac|flac/i.test(file.type + ' ' + file.name)) {
+    // Only skip things that are *clearly* not audio (a known non-audio extension).
+    // Android often gives an empty MIME type, so we must NOT require a match.
+    if (/\.(txt|pdf|docx?|jpe?g|png|gif|zip|json|mp4|mov|avi)$/i.test(file.name || '')) {
       toast('Skipped (not audio): ' + file.name, 'err');
       continue;
     }
-    const id = uid('aud');
-    const duration = await audio.probeDuration(file);
-    await db.putAudio({ id, name: file.name, type: file.type || 'audio', size: file.size, blob: file });
-    store.update(s => {
-      s.audioMeta.push({ id, name: file.name.replace(/\.[^.]+$/, ''), type: file.type, size: file.size, duration });
-    }, 'library');
-    added++;
+    try {
+      const id = uid('aud');
+      let duration = 0;
+      try { duration = await audio.probeDuration(file); } catch {}
+      await db.putAudio({ id, name: file.name || 'audio', type: file.type || 'audio', size: file.size || 0, blob: file });
+      store.update(s => {
+        s.audioMeta.push({ id, name: (file.name || 'audio').replace(/\.[^.]+$/, ''), type: file.type, size: file.size || 0, duration });
+      }, 'library');
+      added++;
+    } catch (e) {
+      console.error('add audio failed', e);
+      toast('Could not add ' + (file.name || 'file') + ': ' + (e && e.message ? e.message : e), 'err');
+    }
   }
   if (added) toast(`Added ${added} file${added > 1 ? 's' : ''}`, 'ok');
 }
