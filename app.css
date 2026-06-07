@@ -128,6 +128,11 @@ hr{border:none;border-top:1px solid var(--line);margin:10px 0}
 .perform-script{overflow-y:auto;padding:10px 12px 120px;border-right:1px solid var(--line)}
 .perform-script .script-line.next-anchor{background:rgba(245,158,11,.13);border-color:var(--amber)}
 .perform-script .script-line.fired{opacity:.5}
+/* voice-follow (teleprompter) highlight */
+.perform-script .script-line.spoken{opacity:.5}
+.perform-script .script-line.speaking{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.45)}
+.perform-script .script-line .w{border-radius:3px;transition:background .12s}
+.perform-script .script-line .w.on{background:rgba(34,197,94,.40);color:#eafff1}
 .perform-side{display:flex;flex-direction:column;gap:10px;padding:12px;overflow-y:auto;background:var(--bg2)}
 
 .next-cue-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}

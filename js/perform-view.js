@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { audio } from './audio.js';
 import { voice } from './voice.js';
-import { $, el, toast, fmtTime, matchScore, escapeHtml } from './util.js';
+import { $, el, toast, fmtTime, tokens, normalize } from './util.js';
 
 const scriptEl = $('#performScript');
 const npList = $('#npList');
@@ -18,6 +18,13 @@ let active = false;    // perform view currently visible
 let rafId = null;
 const rackRows = new Map(); // playerId -> { row, range, time, playBtn }
 const seeking = new Set();  // playerIds currently being dragged
+
+// ---- voice "teleprompter" follow state ----
+let followTokens = [];      // [{ line, w, norm }] spoken words in script order
+let tokenCursor = 0;        // how far through the script we've heard
+let speakingLineIdx = -1;   // line currently being spoken (DOM data-i)
+let followMisses = 0;       // consecutive recognitions with no forward match
+const FOLLOW_WINDOW = 45;   // how far ahead we look for the next spoken word
 
 function nextCue() { return store.show.cues[pos] || null; }
 
@@ -75,7 +82,7 @@ export function renderPerform() {
       const row = el('div', { class: 'script-line ' + ln.type, dataset: { i: ln.i } });
       row.append(el('span', { class: 'ln' }, String(ln.i + 1)));
       const tx = el('span', { class: 'tx' });
-      tx.textContent = ln.text;
+      tx.append(el('span', { class: 'txt' }, ln.text)); // word-highlight target
       const here = cueByLine.get(ln.i);
       if (here) for (const { c } of here) tx.append(el('span', { class: 'cue-chip ' + c.action }, [(c.action === 'start' ? '▶' : c.action === 'fade' ? '↘' : '◼') + ' ' + c.name]));
       row.append(tx);
@@ -93,6 +100,7 @@ export function renderPerform() {
   }
   renderPlayhead();
   scrollToNextAnchor();
+  if (voice.isRunning()) { buildFollowModel(); speakingLineIdx = -1; applyHighlight(); }
 }
 
 function renderPlayhead() {
@@ -199,31 +207,126 @@ function tick() {
   if (active) rafId = requestAnimationFrame(tick);
 }
 
-// ---- voice assist ----
-function onVoice(res) {
-  if (res.error) { voiceState.textContent = res.error; voiceToggle.checked = false; voiceState.textContent = 'mic denied'; return; }
-  const heard = (res.final || res.interim || '').slice(-120);
-  const c = nextCue();
-  let armNow = false, matchedWord = '';
-  if (c && c.trigger) {
-    const score = matchScore(heard, c.trigger);
-    if (score >= 0.55) { armNow = true; }
+// ---- voice "teleprompter" follow ----
+// Voice assist no longer arms or fires anything — it just highlights the words in
+// the script as they're recognized, so the operator can see the position. GO stays
+// fully manual.
+
+const splitWords = (text) => text.split(/(\s+)/); // [word, space, word, space, ...]
+
+function buildFollowModel() {
+  followTokens = [];
+  for (const ln of store.show.script) {
+    if (ln.type === 'scene' || ln.type === 'stage') continue; // not spoken aloud
+    let w = -1;
+    for (const part of splitWords(ln.text)) {
+      if (/^\s+$/.test(part) || part === '') continue;
+      w++;
+      followTokens.push({ line: ln.i, w, norm: normalize(part) });
+    }
   }
-  voiceHeard.innerHTML = heard ? `“${escapeHtml(heard)}”` : '';
-  if (armNow && !armed) { armed = true; goBtn.classList.add('armed'); navigator.vibrate?.(40); }
+}
+
+function seedCursorToPlayhead() {
+  const anchor = nextCue() ? nextCue().anchorLine : null;
+  if (anchor == null) { tokenCursor = 0; return; }
+  const idx = followTokens.findIndex(t => t.line >= anchor);
+  tokenCursor = idx < 0 ? 0 : idx;
+}
+
+function globalFind(toks) {
+  if (toks.length < 2) return -1;
+  const a = toks[toks.length - 2], b = toks[toks.length - 1];
+  for (let j = 1; j < followTokens.length; j++) {
+    if (followTokens[j].norm === b && followTokens[j - 1].norm === a) return j;
+  }
+  return -1;
+}
+
+function onVoice(res) {
+  if (res.error) { voiceToggle.checked = false; voiceState.textContent = 'mic denied'; toggleVoice(false); return; }
+  const recog = tokens(res.final || res.interim || '').slice(-6);
+  if (!recog.length) return;
+
+  let advanced = false;
+  for (const rt of recog) {
+    const end = Math.min(followTokens.length, tokenCursor + FOLLOW_WINDOW);
+    for (let j = tokenCursor; j < end; j++) {
+      if (followTokens[j].norm === rt) { tokenCursor = j + 1; advanced = true; break; }
+    }
+  }
+  if (advanced) { followMisses = 0; }
+  else if (++followMisses >= 6) {            // lost the place — try to resync anywhere
+    const j = globalFind(recog);
+    if (j >= 0) { tokenCursor = j + 1; advanced = true; followMisses = 0; }
+  }
+  if (advanced) applyHighlight();
+}
+
+// Derive the highlight purely from tokenCursor so it survives re-renders.
+function applyHighlight() {
+  if (!followTokens.length || tokenCursor <= 0) return;
+  const cur = followTokens[Math.min(tokenCursor, followTokens.length) - 1];
+  const line = cur.line, wordIdx = cur.w;
+
+  if (line !== speakingLineIdx) {
+    // unwrap the previous speaking line back to plain text
+    const prev = scriptEl.querySelector('.script-line.speaking');
+    if (prev) { const t = prev.querySelector('.txt'); if (t) t.textContent = store.show.script[+prev.dataset.i].text; }
+    // sweep line classes
+    for (const row of scriptEl.children) {
+      const i = row.dataset.i != null ? +row.dataset.i : null;
+      if (i == null) continue;
+      row.classList.toggle('spoken', i < line);
+      row.classList.toggle('speaking', i === line);
+    }
+    speakingLineIdx = line;
+    wrapSpeakingWords(line);
+    const row = scriptEl.querySelector(`.script-line[data-i="${line}"]`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  // light up words up to the current one on the speaking line
+  const row = scriptEl.querySelector(`.script-line[data-i="${line}"] .txt`);
+  if (row) row.querySelectorAll('.w').forEach(s => s.classList.toggle('on', +s.dataset.w <= wordIdx));
+}
+
+function wrapSpeakingWords(lineI) {
+  const txt = scriptEl.querySelector(`.script-line[data-i="${lineI}"] .txt`);
+  if (!txt) return;
+  const text = store.show.script[lineI].text;
+  txt.textContent = '';
+  let w = -1;
+  for (const part of splitWords(text)) {
+    if (part === '') continue;
+    if (/^\s+$/.test(part)) { txt.append(part); continue; }
+    w++;
+    txt.append(el('span', { class: 'w', dataset: { w } }, part));
+  }
+}
+
+function clearFollow() {
+  if (speakingLineIdx >= 0 && store.show.script[speakingLineIdx]) {
+    const t = scriptEl.querySelector(`.script-line[data-i="${speakingLineIdx}"] .txt`);
+    if (t) t.textContent = store.show.script[speakingLineIdx].text;
+  }
+  for (const row of scriptEl.children) row.classList.remove('spoken', 'speaking');
+  speakingLineIdx = -1; tokenCursor = 0; followMisses = 0;
 }
 
 function toggleVoice(on) {
   if (on) {
     if (!voice.supported()) { voiceToggle.checked = false; toast('Voice recognition not supported in this browser', 'err'); return; }
+    if (!store.show.script.length) { voiceToggle.checked = false; toast('Import a script first — follow needs the text', 'err'); return; }
+    buildFollowModel();
+    seedCursorToPlayhead();
     voice.start(onVoice);
-    voiceState.textContent = 'listening · needs internet · Android may chime';
+    voiceState.textContent = 'following the script · needs internet';
   } else {
     voice.stop();
     voiceState.textContent = 'off';
-    voiceHeard.textContent = '';
-    armed = false; goBtn.classList.remove('armed');
+    clearFollow();
   }
+  voiceHeard.hidden = true; // recognized-text line replaced by in-script highlight
 }
 
 // ---- lifecycle ----
@@ -247,6 +350,7 @@ export function initPerformView() {
   $('#panicBtn').addEventListener('click', () => { audio.stopAll(600); toast('All stopped'); });
   voiceToggle.addEventListener('change', () => toggleVoice(voiceToggle.checked));
   voiceState.textContent = voice.supported() ? 'off' : 'unavailable';
+  voiceHeard.hidden = true;
   audio.onChange(() => { if (active) renderRack(); });
   store.onChange(reason => {
     if (['cues', 'library', 'script'].includes(reason) && active) renderPerform();
