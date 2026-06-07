@@ -1,5 +1,7 @@
 # Do NOT publish the play script or any audio — keep copyrighted content off the public repo
 script_extracted.txt
+*.show.json
+build-cuesheet.cjs
 *.docx
 *.doc
 *.rtf

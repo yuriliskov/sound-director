@@ -127,9 +127,12 @@ export const audio = {
       const url = URL.createObjectURL(blob);
       const a = new Audio();
       a.preload = 'metadata';
+      let done = false;
+      const finish = (d) => { if (done) return; done = true; clearTimeout(t); try { URL.revokeObjectURL(url); } catch {} resolve(d); };
+      const t = setTimeout(() => finish(0), 4000); // never hang the import
+      a.addEventListener('loadedmetadata', () => finish(isFinite(a.duration) ? a.duration : 0), { once: true });
+      a.addEventListener('error', () => finish(0), { once: true });
       a.src = url;
-      a.addEventListener('loadedmetadata', () => { resolve(isFinite(a.duration) ? a.duration : 0); URL.revokeObjectURL(url); }, { once: true });
-      a.addEventListener('error', () => { resolve(0); URL.revokeObjectURL(url); }, { once: true });
     });
   },
 

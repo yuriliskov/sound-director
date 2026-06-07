@@ -68,22 +68,53 @@ export function matchScore(spoken, trigger) {
   return hit / tw.length;
 }
 
-export function downloadBlob(blob, filename) {
+export async function downloadBlob(blob, filename) {
+  // On phones a programmatic <a download> often does nothing, so prefer the
+  // native share sheet (lets the user save to Files / Drive / etc.).
+  try {
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return true;
+      }
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return false; // user cancelled the share
+    // otherwise fall through to the anchor download
+  }
   const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: filename });
+  const a = el('a', { href: url, download: filename, rel: 'noopener', target: '_blank' });
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return true;
 }
 
+// Robust file picker. Uses an off-screen (NOT display:none) input — some mobile
+// browsers, notably Samsung Internet, won't open/return from a hidden input that
+// is clicked programmatically. Resolves null if the user cancels.
 export function pickFile(accept, multiple = false) {
   return new Promise((resolve) => {
-    const input = el('input', { type: 'file', accept, multiple, hidden: true });
-    input.addEventListener('change', () => {
-      resolve(multiple ? Array.from(input.files) : input.files[0] || null);
-      input.remove();
-    }, { once: true });
+    const input = el('input', {
+      type: 'file', accept, multiple,
+      style: 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;z-index:-1;pointer-events:none',
+    });
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('focus', onFocus);
+      setTimeout(() => input.remove(), 0);
+      resolve(val);
+    };
+    const onFocus = () => {
+      // Window regained focus: if no file was chosen shortly after, treat as cancel.
+      setTimeout(() => { if (!input.files || !input.files.length) finish(null); }, 1200);
+    };
+    input.addEventListener('change', () => finish(multiple ? Array.from(input.files) : (input.files[0] || null)), { once: true });
+    window.addEventListener('focus', onFocus, { once: true });
     document.body.append(input);
     input.click();
   });
