@@ -9,9 +9,9 @@ let running = false;
 let onText = null;
 let restartTimer = null;
 let lastStart = 0;
-let backoff = 600;            // ms between restarts; grows when idle to stop the chime spam
-const MIN_BACKOFF = 600;
-const MAX_BACKOFF = 4000;
+let backoff = 1500;          // ms between restarts; kept high so Android chimes rarely
+const MIN_BACKOFF = 1500;
+const MAX_BACKOFF = 6000;
 
 export const voice = {
   supported() { return !!SR; },
