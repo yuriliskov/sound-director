@@ -35,6 +35,10 @@
   <!-- ============ MENU SHEET ============ -->
   <div class="sheet-backdrop" id="menuBackdrop" hidden>
     <div class="sheet" role="menu">
+      <div class="sheet-head">
+        <span class="sheet-title">Menu</span>
+        <button class="sheet-x" data-act="close" aria-label="Close menu">✕</button>
+      </div>
       <h3>Show</h3>
       <button class="menu-item" data-act="new-show">🆕 New show…</button>
       <button class="menu-item" data-act="rename-show">✏️ Rename show…</button>
@@ -44,6 +48,7 @@
       <button class="menu-item" data-act="import-bundle">📂 Import full backup (.zip)…</button>
       <hr/>
       <h3>App</h3>
+      <button class="menu-item" data-act="reload">↻ Reload / check for update</button>
       <button class="menu-item" data-act="install">📲 Install app on this device</button>
       <button class="menu-item" data-act="storage">💾 Storage usage…</button>
       <button class="menu-item" data-act="help">❓ Help / how to use</button>

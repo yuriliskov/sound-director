@@ -1,5 +1,5 @@
 // Offline app shell. Bump CACHE when you change any file below.
-const CACHE = 'sound-director-v2';
+const CACHE = 'sound-director-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,10 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
 ];
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

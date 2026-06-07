@@ -8,7 +8,7 @@ import { initCuesView } from './cues-view.js';
 import { initPerformView, setPerformActive, resetPlayhead } from './perform-view.js';
 import { exportShowJson, importShowJson, exportBundle, importBundle } from './show-io.js';
 
-const APP_VERSION = 'v1.0.0';
+const APP_VERSION = 'v1.1.0';
 let installPrompt = null;
 
 // ---------- navigation ----------
@@ -29,13 +29,35 @@ function initNav() {
 // ---------- menu sheet ----------
 function openMenu(open) {
   const m = $('#menuBackdrop');
-  m.hidden = !open;
-  if (open) $('#menuVersion').textContent = 'Sound Director ' + APP_VERSION;
+  if (open && m.hidden) {
+    m.hidden = false;
+    $('#menuVersion').textContent = 'Sound Director ' + APP_VERSION;
+    try { history.pushState({ sdMenu: true }, ''); } catch {}
+  } else if (!open && !m.hidden) {
+    m.hidden = true;
+    if (history.state && history.state.sdMenu) { try { history.back(); } catch {} }
+  }
 }
 
 function initMenu() {
   $('#menuBtn').addEventListener('click', () => openMenu(true));
   $('#menuBackdrop').addEventListener('click', (e) => { if (e.target.id === 'menuBackdrop') openMenu(false); });
+
+  // Android back / Esc closes any open overlay so nothing can trap the user.
+  window.addEventListener('popstate', () => {
+    const m = $('#menuBackdrop');
+    if (!m.hidden) m.hidden = true;
+    document.querySelectorAll('dialog[open]').forEach(d => { try { d.close(); } catch {} });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const m = $('#menuBackdrop');
+    if (!m.hidden) { e.preventDefault(); openMenu(false); }
+  });
+  // Tapping outside a dialog (on its backdrop) closes it.
+  document.querySelectorAll('dialog').forEach(dlg => {
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  });
   $('#menuBackdrop').addEventListener('click', async (e) => {
     const item = e.target.closest('[data-act]');
     if (!item) return;
@@ -57,6 +79,7 @@ function initMenu() {
       case 'import-show': await importShowJson(); updateShowName(); break;
       case 'export-bundle': await exportBundle(); break;
       case 'import-bundle': await importBundle(); updateShowName(); break;
+      case 'reload': await forceReload(); break;
       case 'install': await doInstall(); break;
       case 'storage': await showStorage(); break;
       case 'help': showHelp(); break;
@@ -106,11 +129,26 @@ function initDrop() {
   });
 }
 
-// ---------- service worker ----------
+// ---------- service worker + updates ----------
 function initSW() {
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
-  }
+  if (!('serviceWorker' in navigator)) return;
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return; refreshing = true; location.reload();
+  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
+
+async function forceReload() {
+  toast('Checking for updates…');
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) {
+      await reg.update();
+      if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); return; } // controllerchange reloads
+    }
+  } catch {}
+  location.reload(true);
 }
 
 // ---------- boot ----------
