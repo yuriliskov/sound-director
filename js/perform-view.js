@@ -217,7 +217,7 @@ function toggleVoice(on) {
   if (on) {
     if (!voice.supported()) { voiceToggle.checked = false; toast('Voice recognition not supported in this browser', 'err'); return; }
     voice.start(onVoice);
-    voiceState.textContent = 'listening (needs internet)';
+    voiceState.textContent = 'listening · needs internet · Android may chime';
   } else {
     voice.stop();
     voiceState.textContent = 'off';
