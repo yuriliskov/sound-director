@@ -36,12 +36,34 @@ export async function addAudioFiles(files) {
   if (added) toast(`Added ${added} file${added > 1 ? 's' : ''}`, 'ok');
 }
 
-function previewToggle(meta, btn) {
-  if (audio.isPlayingKey(PREVIEW_KEY)) {
-    audio.stopByKey(PREVIEW_KEY, 0);
-    return;
+function previewPlayer() {
+  for (const p of audio.players.values()) if (p.key === PREVIEW_KEY) return p;
+  return null;
+}
+
+let previewRaf = null;
+let previewSeeking = false;
+
+function previewTick() {
+  const pp = previewPlayer();
+  const row = listEl.querySelector('.lib-item.previewing');
+  if (pp && row && !previewSeeking) {
+    const range = row.querySelector('.lib-seek');
+    const time = row.querySelector('.lib-ptime');
+    const d = pp.elem.duration || 0, cur = pp.elem.currentTime || 0;
+    if (range) range.value = d ? Math.min(1000, cur / d * 1000) : 0;
+    if (time) time.textContent = fmtTime(cur) + (d ? ' / ' + fmtTime(d) : '');
   }
+  previewRaf = pp ? requestAnimationFrame(previewTick) : null;
+}
+function ensurePreviewTick() { if (!previewRaf && previewPlayer()) previewRaf = requestAnimationFrame(previewTick); }
+
+function previewToggle(meta) {
+  const pp = previewPlayer();
+  if (pp && pp.audioId === meta.id) { audio.togglePause(pp.id); return; }
+  if (pp) audio.stop(pp.id, 0);
   audio.play({ audioId: meta.id, name: meta.name, volume: 1, loop: false, restart: true, key: PREVIEW_KEY });
+  ensurePreviewTick();
 }
 
 export function renderLibrary() {
@@ -50,36 +72,47 @@ export function renderLibrary() {
     listEl.innerHTML = '<div class="empty-state">No audio yet. Add your backing tracks (минусовки) and sound effects.<br>Supported: mp3, wav, m4a, ogg, aac, flac.</div>';
     return;
   }
+  const pp = previewPlayer();
   listEl.innerHTML = '';
   for (const m of metas) {
     const usedBy = store.show.cues.filter(c => c.audioId === m.id).length;
-    const playBtn = el('button', { class: 'play', title: 'Preview' }, '▶');
-    const item = el('div', { class: 'lib-item' }, [
-      playBtn,
-      el('div', { class: 'lib-main' }, [
-        el('div', { class: 'lib-name' }, m.name),
-        el('div', { class: 'lib-meta' }, [
-          fmtTime(m.duration || 0) + ' · ' + fmtBytes(m.size || 0) +
-          (usedBy ? ` · used in ${usedBy} cue${usedBy > 1 ? 's' : ''}` : ' · not used'),
-        ]),
+    const isPrev = pp && pp.audioId === m.id;
+    const paused = isPrev && pp.elem.paused;
+    const playBtn = el('button', { class: 'play' + (isPrev && !paused ? ' playing' : ''), title: 'Preview' }, isPrev ? (paused ? '▶' : '⏸') : '▶');
+    playBtn.addEventListener('click', () => previewToggle(m));
+
+    const main = el('div', { class: 'lib-main' }, [
+      el('div', { class: 'lib-name' }, m.name),
+      el('div', { class: 'lib-meta' }, [
+        fmtTime(m.duration || 0) + ' · ' + fmtBytes(m.size || 0) +
+        (usedBy ? ` · used in ${usedBy} cue${usedBy > 1 ? 's' : ''}` : ' · not used'),
       ]),
+    ]);
+
+    if (isPrev) {
+      const time = el('span', { class: 'lib-ptime' }, '0:00');
+      const range = el('input', { type: 'range', class: 'lib-seek', min: '0', max: '1000', value: '0', step: '1' });
+      range.addEventListener('pointerdown', () => { previewSeeking = true; });
+      range.addEventListener('touchstart', () => { previewSeeking = true; }, { passive: true });
+      range.addEventListener('input', () => { const d = pp.elem.duration || 0; time.textContent = fmtTime(d * range.value / 1000) + (d ? ' / ' + fmtTime(d) : ''); });
+      range.addEventListener('change', () => { audio.seek(pp.id, range.value / 1000); previewSeeking = false; });
+      range.addEventListener('pointerup', () => { audio.seek(pp.id, range.value / 1000); previewSeeking = false; });
+      range.addEventListener('pointercancel', () => { previewSeeking = false; });
+      main.append(el('div', { class: 'lib-transport' }, [
+        time, range,
+        el('button', { class: 'lib-pstop', title: 'Stop preview', onclick: () => audio.stop(pp.id, 0) }, '◼'),
+      ]));
+    }
+
+    listEl.append(el('div', { class: 'lib-item' + (isPrev ? ' previewing' : '') }, [
+      playBtn, main,
       el('div', { class: 'lib-actions' }, [
         el('button', { title: 'Rename', onclick: () => renameAudio(m) }, '✏️'),
         el('button', { title: 'Delete', onclick: () => deleteAudio(m) }, '🗑'),
       ]),
-    ]);
-    playBtn.addEventListener('click', () => previewToggle(m, playBtn));
-    listEl.append(item);
+    ]));
   }
-  reflectPlaying();
-}
-
-function reflectPlaying() {
-  const playing = audio.isPlayingKey(PREVIEW_KEY);
-  $$('.lib-item .play', listEl).forEach(b => {
-    b.classList.toggle('playing', playing);
-    b.textContent = playing ? '◼' : '▶';
-  });
+  ensurePreviewTick();
 }
 
 async function renameAudio(m) {
@@ -109,7 +142,12 @@ export function initLibraryView() {
     const files = await pickFile('audio/*,.mp3,.wav,.m4a,.ogg,.aac,.flac', true);
     if (files && files.length) addAudioFiles(files);
   });
-  audio.onChange(reflectPlaying);
+  // Re-render the list on playback changes (play/pause/stop) only while the
+  // Audio tab is visible, so the preview transport stays in sync without churn.
+  audio.onChange(() => {
+    const view = document.querySelector('.view[data-view="library"]');
+    if (view && !view.hidden) renderLibrary();
+  });
   store.onChange(reason => {
     if (['library', 'cues', 'init', 'show-switched'].includes(reason)) renderLibrary();
   });

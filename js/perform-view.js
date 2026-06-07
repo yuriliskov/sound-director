@@ -16,6 +16,8 @@ let pos = 0;            // index of NEXT cue to fire
 let armed = false;     // voice thinks the next cue is due
 let active = false;    // perform view currently visible
 let rafId = null;
+const rackRows = new Map(); // playerId -> { row, range, time, playBtn }
+const seeking = new Set();  // playerIds currently being dragged
 
 function nextCue() { return store.show.cues[pos] || null; }
 
@@ -128,40 +130,72 @@ function scrollToNextAnchor() {
 }
 
 // ---- now playing rack (live) ----
+function buildRackRow(p) {
+  const time = el('span', { class: 'npt-time' }, '0:00');
+  const playBtn = el('button', { class: 'npt-play', title: 'Pause / resume' }, '⏸');
+  const stopBtn = el('button', { class: 'npt-stop', title: 'Fade & stop' }, '◼');
+  const range = el('input', { type: 'range', class: 'npt-seek', min: '0', max: '1000', value: '0', step: '1' });
+
+  playBtn.addEventListener('click', () => audio.togglePause(p.id));
+  stopBtn.addEventListener('click', () => audio.stop(p.id, 800));
+
+  const startSeek = () => seeking.add(p.id);
+  const liveLabel = () => {
+    const pl = audio.players.get(p.id); const d = pl ? (pl.elem.duration || 0) : 0;
+    time.textContent = fmtTime(d * range.value / 1000) + (d ? ' / ' + fmtTime(d) : '');
+  };
+  const commitSeek = () => { audio.seek(p.id, range.value / 1000); seeking.delete(p.id); };
+  range.addEventListener('pointerdown', startSeek);
+  range.addEventListener('touchstart', startSeek, { passive: true });
+  range.addEventListener('input', liveLabel);
+  range.addEventListener('change', commitSeek);
+  range.addEventListener('pointerup', commitSeek);
+  range.addEventListener('pointercancel', () => seeking.delete(p.id));
+
+  const row = el('div', { class: 'np-track' + (p.loop ? ' loop' : ''), dataset: { pid: p.id } }, [
+    el('div', { class: 'npt-top' }, [
+      el('span', { class: 'npt-name' }, (p.loop ? '🔁 ' : '🎵 ') + p.name),
+      time, playBtn, stopBtn,
+    ]),
+    range,
+  ]);
+  return { row, range, time, playBtn };
+}
+
 function renderRack() {
-  if (audio.players.size === 0) {
-    npList.innerHTML = '<div class="np-empty">silence</div>';
-    return;
-  }
-  // diff-free simple rebuild (few tracks at a time)
-  npList.innerHTML = '';
+  const ids = new Set(audio.players.keys());
+  // remove rows for finished players
+  for (const [pid, ref] of rackRows) if (!ids.has(pid)) { ref.row.remove(); rackRows.delete(pid); seeking.delete(pid); }
+  if (audio.players.size === 0) { npList.innerHTML = '<div class="np-empty">silence</div>'; rackRows.clear(); return; }
+  const empty = npList.querySelector('.np-empty'); if (empty) empty.remove();
+  // add rows for new players
   for (const p of audio.players.values()) {
-    const dur = p.elem.duration || 0;
-    const cur = p.elem.currentTime || 0;
-    const pct = dur ? Math.min(100, cur / dur * 100) : 0;
-    const track = el('div', { class: 'np-track' + (p.loop ? ' loop' : '') }, [
-      el('div', { class: 'npt-top' }, [
-        el('span', { class: 'npt-name' }, (p.loop ? '🔁 ' : '🎵 ') + p.name),
-        el('span', { class: 'npt-time' }, fmtTime(cur) + (dur ? ' / ' + fmtTime(dur) : '')),
-        el('button', { class: 'npt-stop', title: 'Fade & stop', onclick: () => audio.stop(p.id, 800) }, '◼'),
-      ]),
-      el('div', { class: 'npt-bar' }, [el('span', { style: `width:${pct}%` })]),
-    ]);
-    npList.append(track);
+    if (rackRows.has(p.id)) continue;
+    const ref = buildRackRow(p);
+    rackRows.set(p.id, ref);
+    npList.append(ref.row);
+  }
+  updateRack();
+}
+
+function updateRack() {
+  for (const p of audio.players.values()) {
+    const ref = rackRows.get(p.id);
+    if (!ref) continue;
+    const d = p.elem.duration || 0, cur = p.elem.currentTime || 0;
+    if (!seeking.has(p.id)) {
+      ref.range.value = d ? Math.min(1000, cur / d * 1000) : 0;
+      ref.time.textContent = fmtTime(cur) + (d ? ' / ' + fmtTime(d) : '');
+    }
+    const paused = p.elem.paused;
+    ref.playBtn.textContent = paused ? '▶' : '⏸';
+    ref.row.classList.toggle('paused', paused);
   }
 }
 
 function tick() {
-  // update only progress widths to avoid rebuilding every frame
-  const players = [...audio.players.values()];
-  const bars = npList.querySelectorAll('.npt-bar > span');
-  const times = npList.querySelectorAll('.npt-time');
-  if (bars.length !== players.length) renderRack();
-  else players.forEach((p, i) => {
-    const dur = p.elem.duration || 0, cur = p.elem.currentTime || 0;
-    bars[i].style.width = (dur ? Math.min(100, cur / dur * 100) : 0) + '%';
-    times[i].textContent = fmtTime(cur) + (dur ? ' / ' + fmtTime(dur) : '');
-  });
+  if (rackRows.size !== audio.players.size) renderRack();
+  else updateRack();
   if (active) rafId = requestAnimationFrame(tick);
 }
 

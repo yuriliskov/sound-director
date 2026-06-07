@@ -82,6 +82,38 @@ export const audio = {
     return player;
   },
 
+  pause(playerId) {
+    const p = players.get(playerId);
+    if (p && !p.elem.paused) { p.elem.pause(); emit(); }
+  },
+
+  resume(playerId) {
+    const p = players.get(playerId);
+    if (p && p.elem.paused) { this.unlock(); p.elem.play().catch(() => {}); emit(); }
+  },
+
+  togglePause(playerId) {
+    const p = players.get(playerId);
+    if (!p) return;
+    if (p.elem.paused) this.resume(playerId); else this.pause(playerId);
+  },
+
+  isPaused(playerId) {
+    const p = players.get(playerId);
+    return p ? p.elem.paused : false;
+  },
+
+  // Seek to an absolute time (seconds) or, if 0..1, a fraction of the duration.
+  seek(playerId, value) {
+    const p = players.get(playerId);
+    if (!p) return;
+    const d = p.elem.duration || 0;
+    let t = value <= 1 && value >= 0 && d ? value * d : value;
+    if (d) t = Math.max(0, Math.min(d - 0.05, t));
+    try { p.elem.currentTime = Math.max(0, t); } catch {}
+    emit();
+  },
+
   setVolume(playerId, volume) {
     const p = players.get(playerId);
     if (!p) return;
