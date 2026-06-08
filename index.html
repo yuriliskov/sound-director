@@ -130,6 +130,10 @@
         <input type="file" id="scriptFileInput" accept=".docx,.txt,text/plain" hidden />
         <button class="btn" id="pasteScriptBtn">📋 Paste text…</button>
       </div>
+      <div class="search-row">
+        <input type="search" id="scriptSearch" class="search-inp" placeholder="🔍 Find a line (e.g. Зыкина, поёт, музыка)…" autocomplete="off" />
+        <span class="search-count" id="scriptSearchCount"></span>
+      </div>
       <div class="script-list" id="scriptList">
         <div class="empty-state">No script loaded. Import the play's .docx, or paste the text. Then tap any line to make it a cue.</div>
       </div>

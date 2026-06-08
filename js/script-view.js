@@ -1,14 +1,19 @@
 import { store } from './store.js';
-import { $, el, toast, pickFile } from './util.js';
+import { $, el, toast, pickFile, normalize } from './util.js';
 import { parseFile, textToLines } from './script-import.js';
 import { openCueEditor } from './cue-editor.js';
 import { openTextDialog } from './text-dialog.js';
 
 const listEl = $('#scriptList');
+let query = '';
 
 // Words that usually mark a sound event in a Russian theater script.
 const START_WORDS = /(фонограмм|минусовк|начина(ет|ется)|играет|звучит|вступ(ает|ление)|включа(ет|ется)|песня|саундтрек|музыка\s|оркестр|аплодисмент|звук|БДЫЩ)/i;
 const STOP_WORDS = /(обрыва|затиха|заканчива|умолка|стоп|выключа|тишина|стихает|пауза\b)/i;
+// "X поёт «title»" / "поёт:" style song cues — require a quoted title or a colon
+// so we don't catch dialogue like "когда люди поют".
+const SING_WORDS = /(по[ёе]т|поют|спеть|романс)/i;
+const HAS_TITLE = /[«»"“”]/;
 
 function cuesByLine() {
   const map = new Map();
@@ -25,11 +30,19 @@ export function renderScript() {
   const script = store.show.script;
   if (!script.length) {
     listEl.innerHTML = '<div class="empty-state">No script loaded. Import the play\'s <b>.docx</b>, or paste the text. Then tap any line to make it a cue.</div>';
+    setCount('');
     return;
   }
+  const q = normalize(query);
+  const lines = q ? script.filter(ln => normalize(ln.text).includes(q)) : script;
+  setCount(q ? `${lines.length} match${lines.length === 1 ? '' : 'es'}` : '');
   const byLine = cuesByLine();
   listEl.innerHTML = '';
-  for (const ln of script) {
+  if (q && !lines.length) {
+    listEl.innerHTML = '<div class="empty-state">No lines match “' + query + '”.</div>';
+    return;
+  }
+  for (const ln of lines) {
     const row = el('div', { class: 'script-line ' + ln.type, dataset: { i: ln.i } });
     row.append(el('span', { class: 'ln' }, String(ln.i + 1)));
     const tx = el('span', { class: 'tx' });
@@ -52,6 +65,7 @@ export function renderScript() {
 }
 
 function chipIcon(a) { return a === 'start' ? '▶' : a === 'fade' ? '↘' : '◼'; }
+function setCount(t) { const e = $('#scriptSearchCount'); if (e) e.textContent = t; }
 
 async function importScriptFile() {
   const file = await pickFile('.docx,.txt,text/plain');
@@ -89,6 +103,7 @@ export function autoDetectCues() {
     let action = null;
     if (STOP_WORDS.test(t) && !START_WORDS.test(t)) action = 'stop';
     else if (START_WORDS.test(t)) action = 'start';
+    else if (SING_WORDS.test(t) && (HAS_TITLE.test(t) || /по[ёе]т\s*:/.test(t))) action = 'start';
     if (action) found.push({ line: ln.i, text: t, action });
   }
   if (!found.length) return toast('No new cue-like lines found', '');
@@ -120,6 +135,8 @@ function suggestName(text, action) {
 export function initScriptView() {
   $('#importDocxBtn').addEventListener('click', importScriptFile);
   $('#pasteScriptBtn').addEventListener('click', pasteScript);
+  const search = $('#scriptSearch');
+  if (search) search.addEventListener('input', () => { query = search.value; renderScript(); });
   store.onChange(reason => {
     if (['script', 'cues', 'init', 'show-switched'].includes(reason)) renderScript();
   });
